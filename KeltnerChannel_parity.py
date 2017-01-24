@@ -12,21 +12,18 @@ INIT_CAP = 100000000
 START_DATE = '20130101'
 END_DATE = '20161231'
 Fee_Rate = 0.001
+program_path = 'C:/cStrategy/'
 
 
 def initial(sdk):
     # 准备数据
     sdk.prepareData(['LZ_GPA_QUOTE_THIGH', 'LZ_GPA_QUOTE_TLOW',
                      'LZ_GPA_INDEX_CSI500MEMBER', 'LZ_GPA_SLCIND_STOP_FLAG'])
-    # 下面获取close数据是为了判断某些股票当天是否已退市
-    close = pd.read_csv('C:\cStrategy\Factor\LZ_GPA_QUOTE_TCLOSE.csv', index_col=0)
-    close.index = [str(i) for i in close.index]
-    sdk.setGlobal('close', close)
 
 
 def init_per_day(sdk):
-    close = sdk.getGlobal('close')
     today = sdk.getNowDate()
+    sdk.sdklog(today, '=================================日期')
     # 获取股票仓位信息
     in_zz500 = pd.Series(sdk.getFieldData('LZ_GPA_INDEX_CSI500MEMBER')[-1]) == 1
     stock_list = sdk.getStockList()
@@ -34,17 +31,17 @@ def init_per_day(sdk):
     sdk.setGlobal('zz500', zz500)
     # 获取仓位信息
     positions = sdk.getPositions()
+    sdk.sdklog(len(positions), '持有股票数量')
     stock_with_position = [i.code for i in positions]
     # 找到中证500外的有仓位的股票
     out_zz500_stock = list(set(stock_with_position) - set(zz500))
     # 以下代码获取当天未停牌未退市的股票，即可交易股票
     # not_stop = pd.isnull(sdk.getFieldData('LZ_GPA_SLCIND_STOP_FLAG')[-1])  # 当日没有停牌的股票
     not_stop = pd.isnull(sdk.getFieldData('LZ_GPA_SLCIND_STOP_FLAG')[-11:]).all(axis=0)  # 当日和前10日均没有停牌的股票
-    on_list = list(pd.notnull(close.ix[today]))  # 存在于市场上的股票,去除退市股票
-    zz500_available = list(pd.Series(stock_list)[np.logical_and(np.logical_and(in_zz500, not_stop), on_list)])
+    zz500_available = list(pd.Series(stock_list)[np.logical_and(in_zz500, not_stop)])
     sdk.setGlobal('zz500_available', zz500_available)
     # 以下代码获取当天被移出中证500的有仓位的股票中可交易的股票
-    out_zz500_available = list(set(pd.Series(stock_list)[np.logical_and(not_stop, on_list)]).intersection(set(out_zz500_stock)))
+    out_zz500_available = list(set(pd.Series(stock_list)[not_stop]).intersection(set(out_zz500_stock)))
     sdk.setGlobal('out_zz500_available', out_zz500_available)
     # 订阅所有可交易的股票
     stock_available = list(set(zz500_available + out_zz500_available))
@@ -54,9 +51,7 @@ def init_per_day(sdk):
     low = pd.DataFrame(sdk.getFieldData('LZ_GPA_QUOTE_TLOW')[-5:], columns=stock_list)[stock_available]
     up_line = high.mean(axis=0)
     down_line = low.mean(axis=0)
-    # 记录
-    sdk.sdklog(today, '=================================日期')
-    sdk.sdklog(len(sdk.getPositions()), '持有股票数量')
+    # 全局变量
     sdk.setGlobal('up_line', up_line)
     sdk.setGlobal('down_line', down_line)
     # 建立一个列表，来记录当天有过交易的股票
